@@ -3,7 +3,7 @@
 --------------------------------------------------------------------------------
 -- Unit    : axi_bridge_master_v1_0.vhd
 -- Author  : Goran Marinkovic, Section Diagnostic
--- Version : $Revision: 1.21 $
+-- Version : $Revision: 1.22 $
 --------------------------------------------------------------------------------
 -- Copyright© PSI, Section Diagnostic
 --------------------------------------------------------------------------------
@@ -270,11 +270,14 @@ architecture structural of axis_bridge_master_v1_0 is
    signal last_states : std_logic_Vector(31 downto 0);
    signal timer, elapsed : unsigned(31 downto 0) := X"00000000";
 
+   constant CSP_SET : natural := 1;
+
 begin
 
    -----------------------------------------------------------------------------
    -- Debug
    -----------------------------------------------------------------------------
+   CSP_SET0_G: if (CSP_SET = 0) generate
    -- Common
    debug_clk                      <= AXI_ACLK;
 
@@ -341,7 +344,36 @@ begin
    debug(159 downto 128) <= last_states;
    debug(191 downto 160) <= m_araddr;
    
+   end generate; --CSP_SET0
 
+   -----------------------------------------------------------------------------
+   CSP_SET1_G: if (CSP_SET = 1) generate
+   
+       debug_clk                      <= AXI_ACLK;
+       
+       CSP_REG: process(AXI_ACLK)
+       begin
+           if rising_edge(AXI_ACLK) then
+              debug(031 downto 000) <= m_araddr and RX_ADDR_MASK;
+              debug(063 downto 032) <= M00_AXI_RDATA;
+              debug(095 downto 064) <= tx_tdata;
+              debug(103 downto 096) <= m_arlen; --8
+              debug(107 downto 104) <= tx_tuser; --4
+              debug(109 downto 108) <= m_arburst; --2
+              debug(111 downto 110) <= M00_AXI_RRESP; --2
+              debug(           112) <= m_arvalid;
+              debug(           113) <= M00_AXI_ARREADY;
+              debug(           114) <= M00_AXI_RLAST;
+              debug(           115) <= M00_AXI_RVALID;
+              debug(           116) <= m_rready;
+              debug(           117) <= M00_AXIS_TREADY;
+              debug(           118) <= tx_tvalid;
+              debug(122 downto 119) <= "0000";
+              debug(127 downto 123) <= state_encode; --5
+          end if;
+      end process;
+
+   end generate; --CSP_SET1
 
    -----------------------------------------------------------------------------
    -- STATISTICS
@@ -668,11 +700,11 @@ begin
                   end if;
                --------------------------------------------------------------------
                when RD_AXI_ADDR =>
-                  if (rx_fifo_d_re = '1') then -- address sampled, go on
+                  if (rx_fifo_d_re = '1') then -- address sampled and put to AXI master port, go on
                      state        <= RD_AXI_WAIT;
                   end if;
                when RD_AXI_WAIT =>
-                  if (M00_AXI_RVALID = '1') then -- address sampled, go on
+                   if (M00_AXI_RVALID = '1') then -- read data is available
                      state        <= RD_MGT_SOF;
                   end if;
                when RD_MGT_SOF => -- send start of packet (wait first for data to be available)
@@ -804,7 +836,11 @@ begin
    -- TX CRC
    -----------------------------------------------------------------------------
    tx_crc_rst                     <= '1' when ((state = RD_MGT_SOF) or (state = WR_MGT_SOF)) else '0';
-   tx_crc_valid                   <= '1' when ((M00_AXIS_TREADY = '1') and ((state = RD_MGT_CMD) or (state = RD_MGT_DATA) or (state = WR_MGT_CMD))) else '0';
+   --tx_crc_valid                   <= '1' when ((M00_AXIS_TREADY = '1') and ((state = RD_MGT_CMD) or (state = RD_MGT_DATA) or (state = WR_MGT_CMD))) else '0';
+   tx_crc_valid                   <= '1' when (
+                                                (tx_tvalid = '1') and 
+                                                ((state = RD_MGT_CMD) or (state = RD_MGT_DATA) or (state = WR_MGT_CMD))
+                                              ) else '0';
 
    crc_tx_inst: entity axis_bridge_master_v1_0_lib.crc32_rtl
    port map
